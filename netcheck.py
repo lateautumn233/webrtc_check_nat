@@ -41,6 +41,7 @@ import hashlib
 import binascii
 import argparse
 import urllib.parse
+from datetime import datetime, timezone
 from aiohttp import web, ClientSession
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(message)s")
@@ -196,19 +197,32 @@ async def api_analyze(request: web.Request) -> web.Response:
     b_pwd = body.get("browser_pwd")
     s_ufrag = body.get("server_ufrag")
 
+    timestamp = datetime.now(timezone.utc).isoformat()
+
     # Mappings deduplicated by port
     seen_ports = set()
     for c in srflx:
         seen_ports.add(c["port"])
-        
+
     n = len(seen_ports)
+    all_ports = sorted(seen_ports)
+
+    # Common port info included in every response
+    port_info = {
+        "timestamp": timestamp,
+        "ext_ip": srflx[0]["ip"] if srflx else "",
+        "ext_port": srflx[0]["port"] if srflx else 0,
+        "all_ports": all_ports,
+        "srflx": srflx,
+    }
 
     if n == 0:
-        return web.json_response({"type": "blocked", "label": "UDP 被屏蔽", "details": "无法获取公共 IP。防火墙可能拦截了 UDP。"})
+        return web.json_response({**port_info, "type": "blocked", "label": "UDP 被屏蔽", "details": "无法获取公共 IP。防火墙可能拦截了 UDP。"})
 
     if n > 1:
-        ports = ", ".join(str(p) for p in seen_ports)
+        ports = ", ".join(str(p) for p in all_ports)
         return web.json_response({
+            **port_info,
             "type": "symmetric", "label": "对称型 NAT（Symmetric）",
             "details": f"映射端口不固定 ({ports})。P2P 穿透困难，需要 TURN 中继。"
         })
@@ -219,6 +233,7 @@ async def api_analyze(request: web.Request) -> web.Response:
 
     if ext_ip in local_ips:
         return web.json_response({
+            **port_info,
             "type": "open", "label": "公网/直连（Open Internet）",
             "details": f"IP {ext_ip} 直接暴露在公网，无 NAT 环境。"
         })
@@ -226,6 +241,7 @@ async def api_analyze(request: web.Request) -> web.Response:
     sec_url = request.app['config'].secondary_url
     if not sec_url:
         return web.json_response({
+            **port_info,
             "type": "cone", "label": "锥形 NAT (未检测子类型)",
             "details": f"已识别为 Endpoint-Independent Mapping (映射到 {ext_ip}:{ext_port})。要区分 Full/Restricted 锥形，需要在服务器端配置 --secondary-url。"
         })
@@ -235,9 +251,10 @@ async def api_analyze(request: web.Request) -> web.Response:
     # Test 1: Full Cone Probe (via Secondary IP)
     pld = {"target_ip": ext_ip, "target_port": ext_port, "req_ufrag": b_ufrag, "req_pwd": b_pwd, "server_ufrag": s_ufrag}
     full_cone = await req_secondary_probe(sec_url, pld)
-    
+
     if full_cone:
         return web.json_response({
+            **port_info,
             "type": "full_cone", "label": "全锥形 NAT（Full Cone）",
             "details": "外部任意主机的入站 UDP 都可以畅通无阻，P2P 条件最优。"
         })
@@ -246,12 +263,14 @@ async def api_analyze(request: web.Request) -> web.Response:
     addr_rest = await send_active_probe(ext_ip, ext_port, b_ufrag, b_pwd, s_ufrag)
     if addr_rest:
         return web.json_response({
+            **port_info,
             "type": "addr_rest_cone", "label": "地址受限锥形 NAT（Address-Restricted）",
             "details": "同 IP 其他端口的包可以通过，P2P 条件良好。"
         })
 
     # Fallback Test 3: Port-Restricted
     return web.json_response({
+        **port_info,
         "type": "port_rest_cone", "label": "端口受限锥形 NAT（Port-Restricted）",
         "details": "只有之前通讯过的目标端口才能回传包。可以通过 STUN 打洞实现 P2P。"
     })
@@ -295,6 +314,26 @@ h1 { font-size: 1.75rem; text-align: center; margin-bottom: 0.5rem; background: 
 .t-port_rest_cone { background: rgba(245,158,11,0.15); border: 1px solid var(--warning); color: #fcd34d; }
 .t-symmetric { background: rgba(239,68,68,0.15); border: 1px solid var(--danger); color: #fca5a5; }
 .t-blocked { background: #334155; border: 1px solid #475569; color: #cbd5e1; }
+
+.history-section { margin-top: 2rem; }
+.history-section h3 { font-size: 1rem; color: var(--text-muted); margin-bottom: 0.75rem; }
+.btn-group { display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap; }
+.btn-sm { padding: 0.5rem 0.75rem; border: 1px solid var(--border); border-radius: 6px; background: transparent; color: var(--text-muted); font-size: 0.75rem; cursor: pointer; transition: 0.2s ease; }
+.btn-sm:hover { background: rgba(59,130,246,0.15); color: var(--primary); border-color: var(--primary); }
+.btn-sm.danger:hover { background: rgba(239,68,68,0.15); color: var(--danger); border-color: var(--danger); }
+.history-table { width: 100%; border-collapse: collapse; font-size: 0.75rem; }
+.history-table th { text-align: left; padding: 0.5rem; border-bottom: 1px solid var(--border); color: var(--text-muted); font-weight: 500; }
+.history-table td { padding: 0.5rem; border-bottom: 1px solid rgba(51,65,85,0.5); color: var(--text); vertical-align: top; }
+.history-table tr:hover td { background: rgba(59,130,246,0.05); }
+.history-empty { text-align: center; color: var(--text-muted); font-size: 0.8rem; padding: 1.5rem 0; }
+.nat-badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.7rem; font-weight: 600; }
+.nat-badge.open { background: rgba(16,185,129,0.2); color: #34d399; }
+.nat-badge.full_cone, .nat-badge.cone { background: rgba(59,130,246,0.2); color: #93c5fd; }
+.nat-badge.addr_rest_cone { background: rgba(217,70,239,0.2); color: #f0abfc; }
+.nat-badge.port_rest_cone { background: rgba(245,158,11,0.2); color: #fcd34d; }
+.nat-badge.symmetric { background: rgba(239,68,68,0.2); color: #fca5a5; }
+.nat-badge.blocked { background: rgba(71,85,105,0.3); color: #cbd5e1; }
+.port-list { font-family: monospace; font-size: 0.7rem; color: #a5b4fc; }
 </style>
 </head>
 <body>
@@ -304,11 +343,105 @@ h1 { font-size: 1.75rem; text-align: center; margin-bottom: 0.5rem; background: 
   <button id="startBtn" class="btn" onclick="startTest()">开始检测探测</button>
   <div id="logs" class="logs"><div>System ready.</div></div>
   <div id="result" class="result-box"></div>
+
+  <div class="history-section">
+    <h3>历史记录</h3>
+    <div class="btn-group">
+      <button class="btn-sm" onclick="exportJSON()">导出 JSON</button>
+      <button class="btn-sm" onclick="exportCSV()">导出 CSV</button>
+      <button class="btn-sm danger" onclick="clearHistory()">清空记录</button>
+    </div>
+    <table class="history-table">
+      <thead><tr><th>#</th><th>时间</th><th>NAT 类型</th><th>外部地址</th><th>映射端口</th></tr></thead>
+      <tbody id="historyBody"></tbody>
+    </table>
+    <div id="historyEmpty" class="history-empty">暂无历史记录</div>
+  </div>
 </div>
 
 <script>
 window.SECONDARY_HOST = "{{SECONDARY_HOST}}";
 const PRIMARY_HOST = location.hostname;
+
+// ─── History Management ─────────────────────────────────────────────────────
+const HISTORY_KEY = 'nat_check_history';
+
+function loadHistory() {
+  try { return JSON.parse(localStorage.getItem(HISTORY_KEY)) || []; }
+  catch { return []; }
+}
+
+function saveHistory(history) {
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+}
+
+function addHistory(record) {
+  const history = loadHistory();
+  history.unshift(record);
+  saveHistory(history);
+  renderHistory();
+}
+
+function renderHistory() {
+  const history = loadHistory();
+  const tbody = document.getElementById('historyBody');
+  const empty = document.getElementById('historyEmpty');
+  tbody.innerHTML = '';
+
+  if (history.length === 0) { empty.style.display = 'block'; return; }
+  empty.style.display = 'none';
+
+  history.forEach((r, i) => {
+    const tr = document.createElement('tr');
+    const t = new Date(r.timestamp);
+    const timeStr = t.toLocaleString('zh-CN', {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    const addr = r.ext_ip ? `${r.ext_ip}:${r.ext_port}` : '-';
+    const ports = (r.all_ports && r.all_ports.length) ? r.all_ports.join(', ') : '-';
+    tr.innerHTML = `<td>${history.length - i}</td><td>${timeStr}</td><td><span class="nat-badge ${r.type}">${r.label}</span></td><td style="font-family:monospace;font-size:0.7rem">${addr}</td><td class="port-list">${ports}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+function exportJSON() {
+  const history = loadHistory();
+  if (!history.length) { alert('无历史记录可导出'); return; }
+  const blob = new Blob([JSON.stringify(history, null, 2)], {type: 'application/json'});
+  downloadBlob(blob, `nat_history_${fmtDate()}.json`);
+}
+
+function exportCSV() {
+  const history = loadHistory();
+  if (!history.length) { alert('无历史记录可导出'); return; }
+  const header = '时间,NAT类型,标签,外部IP,外部端口,所有映射端口,详情\n';
+  const rows = history.map(r => {
+    const esc = s => '"' + String(s).replace(/"/g, '""') + '"';
+    return [r.timestamp, r.type, esc(r.label), r.ext_ip||'', r.ext_port||'', (r.all_ports||[]).join(';'), esc(r.details||'')].join(',');
+  }).join('\n');
+  const blob = new Blob(['\uFEFF' + header + rows], {type: 'text/csv;charset=utf-8'});
+  downloadBlob(blob, `nat_history_${fmtDate()}.csv`);
+}
+
+function downloadBlob(blob, filename) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function fmtDate() {
+  const d = new Date();
+  return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}_${String(d.getHours()).padStart(2,'0')}${String(d.getMinutes()).padStart(2,'0')}`;
+}
+
+function clearHistory() {
+  if (!confirm('确定清空所有历史记录？')) return;
+  localStorage.removeItem(HISTORY_KEY);
+  renderHistory();
+}
+
+// Initialize history table on load
+renderHistory();
 
 function log(msg) {
   const c = document.getElementById('logs');
@@ -416,11 +549,13 @@ async function startTest() {
     
     const json = await res.json();
     log(`Server detection result: ${json.type}`);
-    
+
     const rBox = document.getElementById('result');
     rBox.className = 'result-box t-' + json.type;
     rBox.innerHTML = `<h2>${json.label}</h2><p>${json.details}</p>`;
     rBox.style.display = 'block';
+
+    addHistory(json);
 
   } catch(e) {
     log(`Error: ${e.message}`);
