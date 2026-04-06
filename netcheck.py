@@ -42,6 +42,7 @@ import binascii
 import argparse
 import urllib.parse
 from datetime import datetime, timezone
+import aiohttp
 from aiohttp import web, ClientSession
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(message)s")
@@ -381,7 +382,7 @@ function saveHistory(history) {
 }
 
 async function addHistory(record) {
-  const ipInfo = await getIpInfo();
+  const ipInfo = await getIpInfo(record.ext_ip);
   record.prov = ipInfo.prov;
   record.isp = ipInfo.isp;
   const history = loadHistory();
@@ -452,23 +453,22 @@ function clearHistory() {
 // ─── IP Info (province & ISP) ────────────────────────────────────────────────
 const IP_INFO_KEY = 'ip_info_cache';
 
-async function getIpInfo() {
-  const cached = sessionStorage.getItem(IP_INFO_KEY);
+async function getIpInfo(ip) {
+  if (!ip) return { prov: '', isp: '' };
+  const cacheKey = IP_INFO_KEY + '_' + ip;
+  const cached = sessionStorage.getItem(cacheKey);
   if (cached) return JSON.parse(cached);
   try {
-    const res = await fetch('https://ip9.com.cn/get');
+    const res = await fetch('/api/ipinfo?ip=' + encodeURIComponent(ip));
     const json = await res.json();
     if (json.ret === 200 && json.data) {
       const info = { prov: json.data.prov || '', isp: json.data.isp || '' };
-      sessionStorage.setItem(IP_INFO_KEY, JSON.stringify(info));
+      sessionStorage.setItem(cacheKey, JSON.stringify(info));
       return info;
     }
   } catch(e) { console.warn('Failed to fetch IP info:', e); }
   return { prov: '', isp: '' };
 }
-
-// Pre-warm IP info cache on page load
-getIpInfo();
 
 // Initialize history table on load
 renderHistory();
@@ -615,6 +615,21 @@ async def index(request):
     return web.Response(text=html, content_type="text/html")
 
 
+async def api_ipinfo(request):
+    """Proxy ip9.com.cn to avoid CORS issues."""
+    try:
+        ip = request.query.get('ip', '')
+        url = 'https://ip9.com.cn/get'
+        if ip:
+            url += '?ip=' + urllib.parse.quote(ip)
+        async with ClientSession() as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                data = await resp.json(content_type=None)
+                return web.json_response(data)
+    except Exception:
+        return web.json_response({"ret": 0, "data": {}})
+
+
 # ─── App Setup ────────────────────────────────────────────────────────────────
 
 def parse_args():
@@ -654,6 +669,7 @@ async def main():
         _start_stun_udp(3479, loop)
         app.router.add_get("/", index)
         app.router.add_post("/api/analyze", api_analyze)
+        app.router.add_get("/api/ipinfo", api_ipinfo)
         log.info("Running in PRIMARY mode.")
         if args.secondary_url:
             log.info("Paired with secondary node at: %s", args.secondary_url)
