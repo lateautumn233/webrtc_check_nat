@@ -340,7 +340,12 @@ h1 { font-size: 1.75rem; text-align: center; margin-bottom: 0.5rem; background: 
 <div class="card">
   <h1>NAT 类型检测</h1>
   <div class="subtitle">Twin-Server 深度穿透探测 / RFC-5245</div>
-  <button id="startBtn" class="btn" onclick="startTest()">开始检测探测</button>
+  <div style="display:flex;gap:0.75rem;align-items:center">
+    <button id="startBtn" class="btn" onclick="startTest()" style="flex:1">开始检测探测</button>
+    <select id="testCount" style="padding:0.75rem 0.5rem;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:0.9rem;cursor:pointer">
+      <option value="1">1 次</option><option value="3">3 次</option><option value="5">5 次</option><option value="10">10 次</option>
+    </select>
+  </div>
   <div id="logs" class="logs"><div>System ready.</div></div>
   <div id="result" class="result-box"></div>
 
@@ -558,34 +563,41 @@ async function gatherCandidates() {
 
 async function startTest() {
   const btn = document.getElementById('startBtn');
-  btn.disabled = true; document.getElementById('result').style.display = 'none';
+  const countSel = document.getElementById('testCount');
+  const total = parseInt(countSel.value) || 1;
+  btn.disabled = true; countSel.disabled = true;
+  document.getElementById('result').style.display = 'none';
   document.getElementById('logs').innerHTML = '';
 
   try {
-    const data = await gatherCandidates();
-    log(`Sending context to server for deep active inspection...`);
-    log(`Awaiting active filtering UDP probes...`);
-    
-    // Server performs active probes
-    const res = await fetch('/api/analyze', {
-      method: 'POST', body: JSON.stringify(data),
-      headers: { 'Content-Type': 'application/json' }
-    });
-    
-    const json = await res.json();
-    log(`Server detection result: ${json.type}`);
+    for (let round = 1; round <= total; round++) {
+      if (total > 1) log(`── 第 ${round}/${total} 次检测 ──`);
+      const data = await gatherCandidates();
+      log(`Sending context to server for deep active inspection...`);
+      log(`Awaiting active filtering UDP probes...`);
 
-    const rBox = document.getElementById('result');
-    rBox.className = 'result-box t-' + json.type;
-    rBox.innerHTML = `<h2>${json.label}</h2><p>${json.details}</p>`;
-    rBox.style.display = 'block';
+      // Server performs active probes
+      const res = await fetch('/api/analyze', {
+        method: 'POST', body: JSON.stringify(data),
+        headers: { 'Content-Type': 'application/json' }
+      });
 
-    await addHistory(json);
+      const json = await res.json();
+      log(`Server detection result: ${json.type}`);
+
+      const rBox = document.getElementById('result');
+      rBox.className = 'result-box t-' + json.type;
+      rBox.innerHTML = `<h2>${json.label}</h2><p>${json.details}</p>`;
+      rBox.style.display = 'block';
+
+      await addHistory(json);
+    }
+    if (total > 1) log(`── 全部 ${total} 次检测完成 ──`);
 
   } catch(e) {
     log(`Error: ${e.message}`);
   } finally {
-    btn.disabled = false;
+    btn.disabled = false; countSel.disabled = false;
   }
 }
 </script>
