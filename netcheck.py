@@ -295,7 +295,7 @@ HTML = r"""<!DOCTYPE html>
 }
 * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', sans-serif; }
 body { background: var(--bg); color: var(--text); min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 1.5rem; }
-.card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 2.5rem; max-width: 500px; width: 100%; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5); }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 2.5rem; max-width: 700px; width: 100%; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5); }
 h1 { font-size: 1.75rem; text-align: center; margin-bottom: 0.5rem; background: linear-gradient(to right, #60a5fa, #a78bfa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
 .subtitle { text-align: center; color: var(--text-muted); font-size: 0.9rem; margin-bottom: 2rem; }
 .btn { width: 100%; padding: 1rem; border: none; border-radius: 8px; background: var(--primary); color: white; font-weight: 600; font-size: 1rem; cursor: pointer; transition: 0.2s ease; }
@@ -318,13 +318,14 @@ h1 { font-size: 1.75rem; text-align: center; margin-bottom: 0.5rem; background: 
 
 .history-section { margin-top: 2rem; }
 .history-section h3 { font-size: 1rem; color: var(--text-muted); margin-bottom: 0.75rem; }
+.table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .btn-group { display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap; }
 .btn-sm { padding: 0.5rem 0.75rem; border: 1px solid var(--border); border-radius: 6px; background: transparent; color: var(--text-muted); font-size: 0.75rem; cursor: pointer; transition: 0.2s ease; }
 .btn-sm:hover { background: rgba(59,130,246,0.15); color: var(--primary); border-color: var(--primary); }
 .btn-sm.danger:hover { background: rgba(239,68,68,0.15); color: var(--danger); border-color: var(--danger); }
 .history-table { width: 100%; border-collapse: collapse; font-size: 0.75rem; }
-.history-table th { text-align: left; padding: 0.5rem; border-bottom: 1px solid var(--border); color: var(--text-muted); font-weight: 500; }
-.history-table td { padding: 0.5rem; border-bottom: 1px solid rgba(51,65,85,0.5); color: var(--text); vertical-align: top; }
+.history-table th { text-align: left; padding: 0.5rem; border-bottom: 1px solid var(--border); color: var(--text-muted); font-weight: 500; white-space: nowrap; }
+.history-table td { padding: 0.5rem; border-bottom: 1px solid rgba(51,65,85,0.5); color: var(--text); vertical-align: top; white-space: nowrap; }
 .history-table tr:hover td { background: rgba(59,130,246,0.05); }
 .history-empty { text-align: center; color: var(--text-muted); font-size: 0.8rem; padding: 1.5rem 0; }
 .nat-badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.7rem; font-weight: 600; }
@@ -335,6 +336,11 @@ h1 { font-size: 1.75rem; text-align: center; margin-bottom: 0.5rem; background: 
 .nat-badge.symmetric { background: rgba(239,68,68,0.2); color: #fca5a5; }
 .nat-badge.blocked { background: rgba(71,85,105,0.3); color: #cbd5e1; }
 .port-list { font-family: monospace; font-size: 0.7rem; color: #a5b4fc; }
+@media (max-width: 600px) {
+  body { padding: 0.5rem; }
+  .card { padding: 1.25rem; border-radius: 10px; }
+  .history-table { font-size: 0.7rem; }
+}
 </style>
 </head>
 <body>
@@ -357,10 +363,12 @@ h1 { font-size: 1.75rem; text-align: center; margin-bottom: 0.5rem; background: 
       <button class="btn-sm" onclick="exportCSV()">导出 CSV</button>
       <button class="btn-sm danger" onclick="clearHistory()">清空记录</button>
     </div>
+    <div class="table-wrap">
     <table class="history-table">
       <thead><tr><th>#</th><th>时间</th><th>NAT 类型</th><th>外部地址</th><th>省份/运营商</th><th>映射端口</th></tr></thead>
       <tbody id="historyBody"></tbody>
     </table>
+    </div>
     <div id="historyEmpty" class="history-empty">暂无历史记录</div>
   </div>
 </div>
