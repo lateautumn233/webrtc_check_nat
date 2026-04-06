@@ -352,7 +352,7 @@ h1 { font-size: 1.75rem; text-align: center; margin-bottom: 0.5rem; background: 
       <button class="btn-sm danger" onclick="clearHistory()">清空记录</button>
     </div>
     <table class="history-table">
-      <thead><tr><th>#</th><th>时间</th><th>NAT 类型</th><th>外部地址</th><th>映射端口</th></tr></thead>
+      <thead><tr><th>#</th><th>时间</th><th>NAT 类型</th><th>外部地址</th><th>省份/运营商</th><th>映射端口</th></tr></thead>
       <tbody id="historyBody"></tbody>
     </table>
     <div id="historyEmpty" class="history-empty">暂无历史记录</div>
@@ -375,7 +375,10 @@ function saveHistory(history) {
   localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
 }
 
-function addHistory(record) {
+async function addHistory(record) {
+  const ipInfo = await getIpInfo();
+  record.prov = ipInfo.prov;
+  record.isp = ipInfo.isp;
   const history = loadHistory();
   history.unshift(record);
   saveHistory(history);
@@ -396,8 +399,9 @@ function renderHistory() {
     const t = new Date(r.timestamp);
     const timeStr = t.toLocaleString('zh-CN', {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'});
     const addr = r.ext_ip ? `${r.ext_ip}:${r.ext_port}` : '-';
+    const ispInfo = (r.prov || r.isp) ? `${r.prov || ''} · ${r.isp || ''}`.replace(/^ · | · $/g, '') : '-';
     const ports = (r.all_ports && r.all_ports.length) ? r.all_ports.join(', ') : '-';
-    tr.innerHTML = `<td>${history.length - i}</td><td>${timeStr}</td><td><span class="nat-badge ${r.type}">${r.label}</span></td><td style="font-family:monospace;font-size:0.7rem">${addr}</td><td class="port-list">${ports}</td>`;
+    tr.innerHTML = `<td>${history.length - i}</td><td>${timeStr}</td><td><span class="nat-badge ${r.type}">${r.label}</span></td><td style="font-family:monospace;font-size:0.7rem">${addr}</td><td style="font-size:0.75rem">${ispInfo}</td><td class="port-list">${ports}</td>`;
     tbody.appendChild(tr);
   });
 }
@@ -412,10 +416,10 @@ function exportJSON() {
 function exportCSV() {
   const history = loadHistory();
   if (!history.length) { alert('无历史记录可导出'); return; }
-  const header = '时间,NAT类型,标签,外部IP,外部端口,所有映射端口,详情\n';
+  const header = '时间,NAT类型,标签,外部IP,外部端口,省份,运营商,所有映射端口,详情\n';
   const rows = history.map(r => {
     const esc = s => '"' + String(s).replace(/"/g, '""') + '"';
-    return [r.timestamp, r.type, esc(r.label), r.ext_ip||'', r.ext_port||'', (r.all_ports||[]).join(';'), esc(r.details||'')].join(',');
+    return [r.timestamp, r.type, esc(r.label), r.ext_ip||'', r.ext_port||'', r.prov||'', r.isp||'', (r.all_ports||[]).join(';'), esc(r.details||'')].join(',');
   }).join('\n');
   const blob = new Blob(['\uFEFF' + header + rows], {type: 'text/csv;charset=utf-8'});
   downloadBlob(blob, `nat_history_${fmtDate()}.csv`);
@@ -439,6 +443,27 @@ function clearHistory() {
   localStorage.removeItem(HISTORY_KEY);
   renderHistory();
 }
+
+// ─── IP Info (province & ISP) ────────────────────────────────────────────────
+const IP_INFO_KEY = 'ip_info_cache';
+
+async function getIpInfo() {
+  const cached = sessionStorage.getItem(IP_INFO_KEY);
+  if (cached) return JSON.parse(cached);
+  try {
+    const res = await fetch('https://ip9.com.cn/get');
+    const json = await res.json();
+    if (json.ret === 200 && json.data) {
+      const info = { prov: json.data.prov || '', isp: json.data.isp || '' };
+      sessionStorage.setItem(IP_INFO_KEY, JSON.stringify(info));
+      return info;
+    }
+  } catch(e) { console.warn('Failed to fetch IP info:', e); }
+  return { prov: '', isp: '' };
+}
+
+// Pre-warm IP info cache on page load
+getIpInfo();
 
 // Initialize history table on load
 renderHistory();
@@ -555,7 +580,7 @@ async function startTest() {
     rBox.innerHTML = `<h2>${json.label}</h2><p>${json.details}</p>`;
     rBox.style.display = 'block';
 
-    addHistory(json);
+    await addHistory(json);
 
   } catch(e) {
     log(`Error: ${e.message}`);
