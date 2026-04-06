@@ -350,8 +350,9 @@ h1 { font-size: 1.75rem; text-align: center; margin-bottom: 0.5rem; background: 
   <div style="display:flex;gap:0.75rem;align-items:center">
     <button id="startBtn" class="btn" onclick="startTest()" style="flex:1">开始检测探测</button>
     <select id="testCount" style="padding:0.75rem 0.5rem;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:0.9rem;cursor:pointer">
-      <option value="1">1 次</option><option value="3">3 次</option><option value="5">5 次</option><option value="10">10 次</option>
+      <option value="1">1 次</option><option value="5">5 次</option><option value="10">10 次</option><option value="20">20 次</option><option value="50">50 次</option><option value="custom">自定义</option>
     </select>
+    <input id="testCountCustom" type="number" min="1" max="999" value="1" style="display:none;width:4.5rem;padding:0.75rem 0.5rem;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:0.9rem;text-align:center">
   </div>
   <div id="logs" class="logs"><div>System ready.</div></div>
   <div id="result" class="result-box"></div>
@@ -481,6 +482,17 @@ async function getIpInfo(ip) {
 // Initialize history table on load
 renderHistory();
 
+// Toggle custom input visibility
+document.getElementById('testCount').addEventListener('change', function() {
+  document.getElementById('testCountCustom').style.display = this.value === 'custom' ? 'block' : 'none';
+});
+
+function getTestCount() {
+  const sel = document.getElementById('testCount');
+  if (sel.value === 'custom') return Math.max(1, parseInt(document.getElementById('testCountCustom').value) || 1);
+  return parseInt(sel.value) || 1;
+}
+
 function log(msg) {
   const c = document.getElementById('logs');
   const d = document.createElement('div');
@@ -572,8 +584,9 @@ async function gatherCandidates() {
 async function startTest() {
   const btn = document.getElementById('startBtn');
   const countSel = document.getElementById('testCount');
-  const total = parseInt(countSel.value) || 1;
-  btn.disabled = true; countSel.disabled = true;
+  const countCustom = document.getElementById('testCountCustom');
+  const total = getTestCount();
+  btn.disabled = true; countSel.disabled = true; countCustom.disabled = true;
   document.getElementById('result').style.display = 'none';
   document.getElementById('logs').innerHTML = '';
 
@@ -605,7 +618,7 @@ async function startTest() {
   } catch(e) {
     log(`Error: ${e.message}`);
   } finally {
-    btn.disabled = false; countSel.disabled = false;
+    btn.disabled = false; countSel.disabled = false; countCustom.disabled = false;
   }
 }
 </script>
